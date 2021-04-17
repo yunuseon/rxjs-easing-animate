@@ -1,0 +1,9 @@
+.canvas {
+    display: block;
+    margin: 0px;
+    padding: 0px;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    outline: 3px solid black;
+}
