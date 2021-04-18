@@ -194,7 +194,7 @@ const getCorrespondingPointOnGraph = (
   pointInsideGraph: Point | null
 ) => {
   if (!pointInsideGraph) return null;
-  const distances = points.map(point => Math.sqrt(Math.pow(point.x - pointInsideGraph.x, 2) + Math.pow(point.y - pointInsideGraph.y, 2)));
+  const distances = points.map(point => Math.sqrt(Math.pow(Math.abs(point.x - pointInsideGraph.x), 2) + Math.pow(Math.abs(point.y - pointInsideGraph.y), 2)));
   const minDistance = Math.min(...distances);
   const resultIndex = distances.findIndex(distance => distance === minDistance);
   if (resultIndex === -1) return null;
@@ -215,8 +215,13 @@ const draw = (
   normalizedEdges.forEach(({ from, to }) => edgeOnGraph(graphConfig, from, to));
 
   if (pointInsideGraph) {
-    edgeOnGraph(graphConfig, { x: 0, y: pointInsideGraph.y }, pointInsideGraph, true, '#bdbdbd');
-    edgeOnGraph(graphConfig, { x: pointInsideGraph.x, y: 0 }, pointInsideGraph, true, '#bdbdbd');
+    if (pointInsideGraph.y < 0) {
+      edgeOnGraph(graphConfig, { x: 0, y: -pointInsideGraph.y }, { x: pointInsideGraph.x, y: -pointInsideGraph.y }, true, '#bdbdbd');
+      edgeOnGraph(graphConfig, { x: pointInsideGraph.x, y: -pointInsideGraph.y }, pointInsideGraph, true, '#bdbdbd');
+    } else {
+      edgeOnGraph(graphConfig, { x: 0, y: pointInsideGraph.y }, pointInsideGraph, true, '#bdbdbd');
+      edgeOnGraph(graphConfig, { x: pointInsideGraph.x, y: 0 }, pointInsideGraph, true, '#bdbdbd');
+    }
   }
 
   if (renderOptions.renderPoints) {
@@ -228,10 +233,8 @@ const getPointInside = (event: MouseEvent, graphConfig: GraphConfig): Point | nu
   const xAxis = graphConfig.x;
   const yAxis = graphConfig.y;
 
-  if (event.offsetX < xAxis.min || event.offsetX > xAxis.edge || event.offsetY > yAxis.min || event.offsetY < yAxis.edge) return null;
-
-  const x = Math.abs((event.offsetX - xAxis.min) / xAxis.delta);
-  const y = Math.abs((yAxis.min - event.offsetY) / yAxis.delta);
+  const x = (event.offsetX - xAxis.min) / xAxis.delta;
+  const y = (yAxis.min - event.offsetY) / -yAxis.delta;
 
   return {
     x: x,
