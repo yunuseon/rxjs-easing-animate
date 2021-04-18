@@ -55,6 +55,7 @@ interface AxisConfig {
   max: number;
   edge: number;
   delta: number;
+  offset: number;
 }
 
 const getGraphConfig = (
@@ -90,12 +91,14 @@ const getGraphConfig = (
       min: minX,
       max: maxX,
       delta: maxX - minX,
+      offset: offsetX
     },
     y: {
       edge: edgeY,
       min: minY,
       max: maxY,
       delta: maxY - minY,
+      offset: offsetY
     }
   }
 };
@@ -164,18 +167,19 @@ const draw = (
   normalizedEdges.forEach(({ from, to }) => edgeOnGraph(graphConfig, from, to));
 
   if (highlightPos) {
-    edgeOnGraph(graphConfig, { x: graphConfig.x.min, y: highlightPos.y }, highlightPos);
+    edgeOnGraph(graphConfig, { x: 0, y: highlightPos.y }, highlightPos);
+    edgeOnGraph(graphConfig, { x: highlightPos.x, y: 0 }, highlightPos);
   }
 };
 
 const getPointInsideGraph = (event: MouseEvent, graphConfig: GraphConfig): Point | null => {
-  const x = event.offsetX;
-  const y = event.offsetY;
-
   const xAxis = graphConfig.x;
   const yAxis = graphConfig.y;
 
-  if (x < xAxis.min || x > xAxis.edge || y < yAxis.edge || y > yAxis.min) return null;
+  if (event.offsetX < xAxis.min || event.offsetX > xAxis.edge || event.offsetY > yAxis.min || event.offsetY < yAxis.edge) return null;
+
+  const x = Math.abs((event.offsetX - xAxis.min) / xAxis.delta);
+  const y = Math.abs((yAxis.min - event.offsetY) / yAxis.delta);
 
   return {
     x: x,
