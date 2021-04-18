@@ -291,7 +291,8 @@ const graph$ = (
     const mousePos$ = mouseMove$.pipe(
       map(event => getPointInside(event as MouseEvent, graphConfig)),
       distinctUntilChanged(),
-      takeUntil(mouseLeft$)
+      takeUntil(mouseLeft$),
+      endWith(null)
     );
 
     const positionInsideGraph$ = mouseEnter$.pipe(
