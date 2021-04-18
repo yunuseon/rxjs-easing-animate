@@ -131,10 +131,12 @@ const getGraphConfig = (
 };
 
 const drawEdge = (
-  context: CanvasRenderingContext2D,
+  graphConfig: GraphConfig,
   from: Point,
   to: Point
 ): void => {
+  const context = graphConfig.renderContext;
+
   context.beginPath();
   context.setLineDash([]);
   context.strokeStyle = "#000000";
@@ -144,11 +146,14 @@ const drawEdge = (
 };
 
 const drawText = (
-  context: CanvasRenderingContext2D,
+  graphConfig: GraphConfig,
   text: string,
-  point: Point
+  point: Point,
+  color = '#000000'
 ): void => {
-  context.fillStyle = "#000000";
+  const context = graphConfig.renderContext;
+
+  context.fillStyle = color;
   context.font = "10px serif";
   context.fillText(text, point.x, point.y);
 };
@@ -161,13 +166,13 @@ const drawAxis = (graphConfig: GraphConfig): void => {
   context.fillStyle = "white";
   context.fillRect(0, 0, graphConfig.width, graphConfig.height);
 
-  drawEdge(context, { x: xAxis.min, y: yAxis.min }, { x: xAxis.edge, y: yAxis.min });
-  drawEdge(context, { x: xAxis.min, y: yAxis.edge }, { x: xAxis.min, y: yAxis.min });
-  drawText(context, "0", { x: xAxis.min, y: yAxis.min + 10 });
-  drawText(context, "1", { x: xAxis.max, y: yAxis.min + 10 });
-  drawText(context, "t", { x: xAxis.edge - 5, y: yAxis.min + 8 });
-  drawText(context, "v", { x: xAxis.min - 8, y: yAxis.edge + 5 });
-  drawText(context, "1", { x: xAxis.min - 8, y: yAxis.max });
+  drawEdge(graphConfig, { x: xAxis.min, y: yAxis.min }, { x: xAxis.edge, y: yAxis.min });
+  drawEdge(graphConfig, { x: xAxis.min, y: yAxis.edge }, { x: xAxis.min, y: yAxis.min });
+  drawText(graphConfig, "0", { x: xAxis.min, y: yAxis.min + 10 });
+  drawText(graphConfig, "1", { x: xAxis.max, y: yAxis.min + 10 });
+  drawText(graphConfig, "t", { x: xAxis.edge - 5, y: yAxis.min + 8 });
+  drawText(graphConfig, "v", { x: xAxis.min - 8, y: yAxis.edge + 5 });
+  drawText(graphConfig, "1", { x: xAxis.min - 8, y: yAxis.max });
 };
 
 const edgeOnGraph = (
@@ -241,6 +246,21 @@ const drawHighlight = (graphConfig: GraphConfig, hightlightPosition: Point | nul
     edgeOnGraph(graphConfig, { x: 0, y: hightlightPosition.y }, hightlightPosition, true, '#bdbdbd');
     edgeOnGraph(graphConfig, { x: hightlightPosition.x, y: 0 }, hightlightPosition, true, '#bdbdbd');
   }
+};
+
+const drawHighlightPosition = (graphConfig: GraphConfig, hightlightPosition: Point | null, animationOptions: AnimationOptions) => {
+  if (!hightlightPosition) {
+    return;
+  }
+
+  const stat = `(${Math.floor(hightlightPosition.x * animationOptions.duration)}, ${Math.floor(hightlightPosition.y * animationOptions.to)})`;
+
+  drawText(
+    graphConfig,
+    stat,
+    { x: graphConfig.width - 10 - graphConfig.renderContext.measureText(stat).width, y: 20 },
+    '#bdbdbd'
+  );
 };
 
 const saveToBuffer = (graphConfig: GraphConfig) => {
@@ -379,6 +399,7 @@ const graph$ = (
       tap(highlightPosition => {
         drawBuffer(graphConfig);
         drawHighlight(graphConfig, highlightPosition);
+        drawHighlightPosition(graphConfig, highlightPosition, animationOptions);
       })
     );
   });
