@@ -29,9 +29,14 @@ import {
   takeUntil,
   takeWhile,
   tap,
-  toArray
+  toArray,
+  withLatestFrom
 } from "rxjs/operators";
 import { easingFunctions } from './configs/easing-functions';
+
+interface RenderOptions {
+  renderPoints: boolean;
+}
 
 interface Point {
   x: number;
@@ -146,7 +151,7 @@ const edgeOnGraph = (
   from: Point,
   to: Point,
   dashed = false,
-  color = 'red'
+  color = '#5F021F'
 ): void => {
   const context = graphConfig.renderContext;
   const xAxis = graphConfig.x;
@@ -158,6 +163,30 @@ const edgeOnGraph = (
   context.moveTo(xAxis.min + from.x * xAxis.delta, yAxis.min + from.y * yAxis.delta);
   context.lineTo(xAxis.min + to.x * xAxis.delta, yAxis.min + to.y * yAxis.delta);
   context.stroke();
+};
+
+const pointOnGraph = (
+  graphConfig: GraphConfig,
+  point: Point
+): void => {
+  const context = graphConfig.renderContext;
+  const xAxis = graphConfig.x;
+  const yAxis = graphConfig.y;
+
+  context.beginPath();
+  context.fillStyle = "black";
+  context.setLineDash([]);
+  context.arc(
+    xAxis.min + point.x * xAxis.delta,
+    yAxis.min + point.y * yAxis.delta,
+    1,
+    0,
+    Math.PI * 2,
+    true
+  );
+  context.strokeStyle = "black";
+  context.stroke();
+  context.fill();
 };
 
 const getCorrespondingPointOnGraph = (
@@ -175,7 +204,8 @@ const getCorrespondingPointOnGraph = (
 const draw = (
   graphConfig: GraphConfig,
   normalizedEdges: Edge[],
-  pointInsideGraph: Point | null
+  pointInsideGraph: Point | null,
+  renderOptions: RenderOptions
 ): void => {
   const context = graphConfig.renderContext;
 
@@ -187,6 +217,10 @@ const draw = (
   if (pointInsideGraph) {
     edgeOnGraph(graphConfig, { x: 0, y: pointInsideGraph.y }, pointInsideGraph, true, '#bdbdbd');
     edgeOnGraph(graphConfig, { x: pointInsideGraph.x, y: 0 }, pointInsideGraph, true, '#bdbdbd');
+  }
+
+  if (renderOptions.renderPoints) {
+    normalizedEdges.map(edge => edge.to).forEach(point => pointOnGraph(graphConfig, point));
   }
 };
 
@@ -241,7 +275,8 @@ const graph$ = (
   from: number,
   to: number,
   duration: number,
-  easingFunction: EasingFunction
+  easingFunction: EasingFunction,
+  renderOptions: RenderOptions
 ) =>
   defer(() => {
     const canvas = graphConfig.graphCanvas;
@@ -298,23 +333,33 @@ const graph$ = (
 
     return combineLatest([normalizedEdges$, highlightPosition$]).pipe(
       tap(([normalizedEdges, highlightPosition]) =>
-        draw(graphConfig, normalizedEdges, highlightPosition)
+        draw(graphConfig, normalizedEdges, highlightPosition, renderOptions)
       )
     );
   });
 
 const init = () => {
+  const renderPoints = document.getElementById('render-points') as HTMLInputElement;
   const graphsContainer = document.getElementById('graphs') as HTMLDivElement;
   const durationIndicator = document.getElementById('duration-indicator') as HTMLSpanElement;
   const durationRange = document.getElementById("duration-range") as HTMLInputElement;
 
-  if (!graphsContainer || !durationIndicator || !durationRange) return;
+  if (!graphsContainer || !durationIndicator || !durationRange || !renderPoints) return;
 
   const duration$ = fromEvent(durationRange, "change").pipe(
     map(event => event.target as HTMLInputElement),
     map(target => target.value),
     startWith(durationRange.value),
     map(value => Number(value)),
+    tap(duration => durationIndicator.innerText = `${duration}ms`),
+    shareReplay(1)
+  );
+
+  const renderPoints$ = fromEvent(renderPoints, 'change').pipe(
+    map(event => event.target as HTMLInputElement),
+    map(target => target.checked),
+    startWith(renderPoints.checked),
+    distinctUntilChanged(),
     shareReplay(1)
   );
 
@@ -338,14 +383,20 @@ const init = () => {
 
     graphsContainer.appendChild(graph);
 
-    const graphConfig = getGraphConfig(canvas, 300, 300, 40, 40);
+    const graphConfig = getGraphConfig(canvas, 300, 300, 20, 40);
 
-    const refresher$ = fromEvent(refreshBtn, 'click').pipe(
+
+    const renderOptions$ = renderPoints$.pipe(
+      map(renderPoints => ({
+        renderPoints: renderPoints
+      }))
+    )
+
+    fromEvent(refreshBtn, 'click').pipe(
       mapTo(undefined),
       startWith(undefined),
-      switchMapTo(duration$),
-      tap(duration => durationIndicator.innerText = `${duration}ms`),
-      switchMap(duration => graph$(graphConfig, 0, 100, duration, easingFunction))
+      switchMapTo(combineLatest([duration$, renderOptions$])),
+      switchMap(([duration, renderOptions]) => graph$(graphConfig, 0, 100, duration, easingFunction, renderOptions))
     ).subscribe();
   });
 };
