@@ -1,4 +1,5 @@
 import './styles.css';
+import '../assets/refresh.svg';
 
 import { EasingFunction } from './types/easing-function';
 import {
@@ -18,6 +19,7 @@ import {
   filter,
   finalize,
   map,
+  mapTo,
   pairwise,
   scan,
   shareReplay,
@@ -322,9 +324,14 @@ const init = () => {
     const graph = document.createElement('div');
     graph.classList.add('graph');
 
+    const refreshBtn = document.createElement('img');
+    refreshBtn.src = './assets/refresh.svg';
+    refreshBtn.classList.add('refresh-icon');
+
     const graphHeader = document.createElement('div');
     graphHeader.classList.add('graph-header');
     graphHeader.innerText = name;
+    graphHeader.appendChild(refreshBtn)
 
     graph.appendChild(graphHeader);
     graph.appendChild(canvas);
@@ -333,7 +340,10 @@ const init = () => {
 
     const graphConfig = getGraphConfig(canvas, 300, 300, 40, 40);
 
-    duration$.pipe(
+    const refresher$ = fromEvent(refreshBtn, 'click').pipe(
+      mapTo(undefined),
+      startWith(undefined),
+      switchMapTo(duration$),
       tap(duration => durationIndicator.innerText = `${duration}ms`),
       switchMap(duration => graph$(graphConfig, 0, 100, duration, easingFunction))
     ).subscribe();

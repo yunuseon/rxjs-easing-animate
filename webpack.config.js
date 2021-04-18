@@ -3,10 +3,11 @@ const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
+const srcPath = path.resolve('.', 'src');
 const distPath = path.resolve('.', 'dist');
 
 module.exports = {
-    entry: './src/main.ts',
+    entry: path.resolve(srcPath, 'main.ts'),
     module: {
         rules: [
             {
@@ -18,6 +19,10 @@ module.exports = {
                 test: /\.css$/i,
                 use: [MiniCssExtractPlugin.loader, 'css-loader'],
             },
+            {
+                test: /\.(png|svg|jpg|jpeg|gif)$/i,
+                type: 'asset/resource',
+            },
         ],
     },
     resolve: {
@@ -26,6 +31,7 @@ module.exports = {
     output: {
         filename: 'main.js',
         path: distPath,
+        assetModuleFilename: 'assets/[name][ext][query]',
     },
     plugins: [
         new MiniCssExtractPlugin({
@@ -33,8 +39,8 @@ module.exports = {
         }),
         new HtmlWebpackPlugin({
             title: 'RxJS Easing Animate',
-            template: path.resolve('.', 'src', 'index.html'),
-            filename: path.resolve('dist', 'index.html'),
+            template: path.resolve(srcPath, 'index.html'),
+            filename: path.resolve(distPath, 'index.html'),
             hash: true,
         }),
     ],
