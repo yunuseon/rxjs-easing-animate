@@ -51,6 +51,8 @@ interface Edge {
 interface GraphConfig {
   graphCanvas: HTMLCanvasElement,
   renderContext: CanvasRenderingContext2D,
+  offscreenCanvas: HTMLCanvasElement,
+  offscreenRenderContext: CanvasRenderingContext2D,
   height: number;
   width: number;
   x: AxisConfig;
@@ -90,14 +92,25 @@ const getGraphConfig = (
   graphCanvas.height = height;
   graphCanvas.width = width;
 
-  const renderContext = graphCanvas.getContext("2d");
+  const renderContext = graphCanvas.getContext("2d", { alpha: false });
   if (!renderContext) {
+    throw new Error('Please check why canvas does not have a 2d render context');
+  }
+
+  const offscreenCanvas = document.createElement('canvas');
+  offscreenCanvas.width = graphCanvas.width;
+  offscreenCanvas.height = graphCanvas.height;
+
+  const offscreenRenderContext = offscreenCanvas.getContext('2d');
+  if (!offscreenRenderContext) {
     throw new Error('Please check why canvas does not have a 2d render context');
   }
 
   return {
     graphCanvas: graphCanvas,
     renderContext: renderContext,
+    offscreenCanvas: offscreenCanvas,
+    offscreenRenderContext: offscreenRenderContext,
     height: height,
     width: width,
     x: {
@@ -140,9 +153,13 @@ const drawText = (
   context.fillText(text, point.x, point.y);
 };
 
-const drawGraph = (context: CanvasRenderingContext2D, graphConfig: GraphConfig): void => {
+const drawAxis = (graphConfig: GraphConfig): void => {
+  const context = graphConfig.renderContext;
   const xAxis = graphConfig.x;
   const yAxis = graphConfig.y;
+
+  context.fillStyle = "white";
+  context.fillRect(0, 0, graphConfig.width, graphConfig.height);
 
   drawEdge(context, { x: xAxis.min, y: yAxis.min }, { x: xAxis.edge, y: yAxis.min });
   drawEdge(context, { x: xAxis.min, y: yAxis.edge }, { x: xAxis.min, y: yAxis.min });
@@ -208,6 +225,32 @@ const getCorrespondingPointOnGraph = (
   return points[resultIndex];
 };
 
+const drawGraph = (graphConfig: GraphConfig, edges: Edge[]) => {
+  edges.forEach(({ from, to }) => edgeOnGraph(graphConfig, from, to));
+};
+
+const drawHighlight = (graphConfig: GraphConfig, hightlightPosition: Point | null) => {
+  if (!hightlightPosition) {
+    return;
+  }
+
+  if (hightlightPosition.y < 0) {
+    edgeOnGraph(graphConfig, { x: 0, y: -hightlightPosition.y }, { x: hightlightPosition.x, y: -hightlightPosition.y }, true, '#bdbdbd');
+    edgeOnGraph(graphConfig, { x: hightlightPosition.x, y: -hightlightPosition.y }, hightlightPosition, true, '#bdbdbd');
+  } else {
+    edgeOnGraph(graphConfig, { x: 0, y: hightlightPosition.y }, hightlightPosition, true, '#bdbdbd');
+    edgeOnGraph(graphConfig, { x: hightlightPosition.x, y: 0 }, hightlightPosition, true, '#bdbdbd');
+  }
+};
+
+const saveToBuffer = (graphConfig: GraphConfig) => {
+  graphConfig.offscreenRenderContext.drawImage(graphConfig.graphCanvas, 0, 0);
+};
+
+const drawBuffer = (graphConfig: GraphConfig) => {
+  graphConfig.renderContext.drawImage(graphConfig.offscreenCanvas, 0, 0);
+};
+
 const draw = (
   graphConfig: GraphConfig,
   normalizedEdges: Edge[],
@@ -216,8 +259,6 @@ const draw = (
 ): void => {
   const context = graphConfig.renderContext;
 
-  context.clearRect(0, 0, graphConfig.width, graphConfig.height);
-  drawGraph(context, graphConfig);
 
   normalizedEdges.forEach(({ from, to }) => edgeOnGraph(graphConfig, from, to));
 
@@ -236,7 +277,7 @@ const draw = (
   }
 };
 
-const getPointInside = (event: MouseEvent, graphConfig: GraphConfig): Point | null => {
+const getPointInside = (event: MouseEvent, graphConfig: GraphConfig): Point => {
   const xAxis = graphConfig.x;
   const yAxis = graphConfig.y;
 
@@ -274,7 +315,7 @@ const graph$ = (
 ) =>
   defer(() => {
     const canvas = graphConfig.graphCanvas;
-    const context = canvas.getContext("2d");
+    const context = canvas.getContext("2d", { alpha: false });
 
     if (!context) return EMPTY;
 
@@ -284,14 +325,14 @@ const graph$ = (
 
     const mousePos$ = mouseMove$.pipe(
       map(event => getPointInside(event as MouseEvent, graphConfig)),
-      distinctUntilChanged(),
       takeUntil(mouseLeft$),
       endWith(null)
     );
 
     const positionInsideGraph$ = mouseEnter$.pipe(
       switchMapTo(mousePos$),
-      startWith(null)
+      startWith(null),
+      distinctUntilChanged((a, b) => a?.x === b?.x && a?.y === b?.y)
     );
 
     const point$ = animationFrameState$(animationOptions).pipe(
@@ -299,14 +340,16 @@ const graph$ = (
     );
 
     const points$ = point$.pipe(
-      scan((acc, curr) => [...acc, curr], [] as Point[])
+      scan((acc, curr) => [...acc, curr], [] as Point[]),
+      shareReplay(1)
     );
 
     const highlightPosition$ = combineLatest([
       points$,
       positionInsideGraph$
     ]).pipe(
-      map(([points, positionInsideGraph]) => getCorrespondingPointOnGraph(points, positionInsideGraph))
+      map(([points, positionInsideGraph]) => getCorrespondingPointOnGraph(points, positionInsideGraph)),
+      distinctUntilChanged((a, b) => a?.x === b?.x && a?.y === b?.y)
     );
 
     const normalizedEdges$ = point$.pipe(
@@ -321,10 +364,22 @@ const graph$ = (
       shareReplay(1)
     );
 
-    return combineLatest([normalizedEdges$, highlightPosition$]).pipe(
-      tap(([normalizedEdges, highlightPosition]) =>
-        draw(graphConfig, normalizedEdges, highlightPosition, renderOptions)
-      )
+    return normalizedEdges$.pipe(
+      tap(edges => {
+        drawAxis(graphConfig);
+        drawGraph(graphConfig, edges);
+
+        if (renderOptions.renderPoints) {
+          edges.map(edge => edge.to).forEach(point => pointOnGraph(graphConfig, point));
+        }
+
+        saveToBuffer(graphConfig);
+      }),
+      switchMapTo(highlightPosition$),
+      tap(highlightPosition => {
+        drawBuffer(graphConfig);
+        drawHighlight(graphConfig, highlightPosition);
+      })
     );
   });
 
