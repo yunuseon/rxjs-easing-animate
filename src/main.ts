@@ -109,6 +109,7 @@ const drawEdge = (
   to: Point
 ): void => {
   context.beginPath();
+  context.setLineDash([]);
   context.strokeStyle = "#000000";
   context.moveTo(from.x, from.y);
   context.lineTo(to.x, to.y);
@@ -141,23 +142,38 @@ const drawGraph = (context: CanvasRenderingContext2D, graphConfig: GraphConfig):
 const edgeOnGraph = (
   graphConfig: GraphConfig,
   from: Point,
-  to: Point
+  to: Point,
+  dashed = false,
+  color = 'red'
 ): void => {
   const context = graphConfig.renderContext;
   const xAxis = graphConfig.x;
   const yAxis = graphConfig.y;
 
   context.beginPath();
-  context.strokeStyle = "red";
+  context.strokeStyle = color;
+  context.setLineDash(dashed ? [5, 5] : []);
   context.moveTo(xAxis.min + from.x * xAxis.delta, yAxis.min + from.y * yAxis.delta);
   context.lineTo(xAxis.min + to.x * xAxis.delta, yAxis.min + to.y * yAxis.delta);
   context.stroke();
 };
 
+const getCorrespondingPointOnGraph = (
+  points: Point[],
+  pointInsideGraph: Point | null
+) => {
+  if (!pointInsideGraph) return null;
+  const distances = points.map(point => Math.sqrt(Math.pow(point.x - pointInsideGraph.x, 2) + Math.pow(point.y - pointInsideGraph.y, 2)));
+  const minDistance = Math.min(...distances);
+  const resultIndex = distances.findIndex(distance => distance === minDistance);
+  if (resultIndex === -1) return null;
+  return points[resultIndex];
+};
+
 const draw = (
   graphConfig: GraphConfig,
   normalizedEdges: Edge[],
-  highlightPos: Point | null
+  pointInsideGraph: Point | null
 ): void => {
   const context = graphConfig.renderContext;
 
@@ -166,13 +182,13 @@ const draw = (
 
   normalizedEdges.forEach(({ from, to }) => edgeOnGraph(graphConfig, from, to));
 
-  if (highlightPos) {
-    edgeOnGraph(graphConfig, { x: 0, y: highlightPos.y }, highlightPos);
-    edgeOnGraph(graphConfig, { x: highlightPos.x, y: 0 }, highlightPos);
+  if (pointInsideGraph) {
+    edgeOnGraph(graphConfig, { x: 0, y: pointInsideGraph.y }, pointInsideGraph, true, '#bdbdbd');
+    edgeOnGraph(graphConfig, { x: pointInsideGraph.x, y: 0 }, pointInsideGraph, true, '#bdbdbd');
   }
 };
 
-const getPointInsideGraph = (event: MouseEvent, graphConfig: GraphConfig): Point | null => {
+const getPointInside = (event: MouseEvent, graphConfig: GraphConfig): Point | null => {
   const xAxis = graphConfig.x;
   const yAxis = graphConfig.y;
 
@@ -200,8 +216,8 @@ const point$ = (from: number, to: number, duration: number, easingFunction: Easi
         })
       ),
       startWith({ x: 0, y: from }),
-      endWith({ x: duration, y: to }),
-      takeWhile(point => point.x < duration)
+      takeWhile(point => point.x < duration),
+      endWith({ x: duration, y: to })
     );
   });
 
@@ -236,22 +252,37 @@ const graph$ = (
     const mouseLeft$ = fromEvent(canvas, "mouseleave");
 
     const mousePos$ = mouseMove$.pipe(
-      map(event => getPointInsideGraph(event as MouseEvent, graphConfig)),
+      map(event => getPointInside(event as MouseEvent, graphConfig)),
       distinctUntilChanged(),
       takeUntil(mouseLeft$)
     );
 
-    const posInsideGraph$ = mouseEnter$.pipe(
+    const positionInsideGraph$ = mouseEnter$.pipe(
       switchMapTo(mousePos$),
       startWith(null)
     );
 
-    const normalizedEdges$ = pointNormalized$(
+    const point$ = pointNormalized$(
       from,
       to,
       duration,
       easingFunction
     ).pipe(
+      shareReplay(1)
+    );
+
+    const points$ = point$.pipe(
+      scan((acc, curr) => [...acc, curr], [] as Point[])
+    );
+
+    const highlightPosition$ = combineLatest([
+      points$,
+      positionInsideGraph$
+    ]).pipe(
+      map(([points, positionInsideGraph]) => getCorrespondingPointOnGraph(points, positionInsideGraph))
+    );
+
+    const normalizedEdges$ = point$.pipe(
       pairwise(),
       map(
         ([from, to]): Edge => ({
@@ -263,9 +294,9 @@ const graph$ = (
       shareReplay(1)
     );
 
-    return combineLatest([normalizedEdges$, posInsideGraph$]).pipe(
-      tap(([normalizedEdges, highlightPos]) =>
-        draw(graphConfig, normalizedEdges, highlightPos)
+    return combineLatest([normalizedEdges$, highlightPosition$]).pipe(
+      tap(([normalizedEdges, highlightPosition]) =>
+        draw(graphConfig, normalizedEdges, highlightPosition)
       )
     );
   });
