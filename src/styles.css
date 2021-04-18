@@ -35,10 +35,24 @@ canvas {
     margin-left: 10px;
     height: 20px;
     width: 20px;
-    transition: transform 0.7s ease-in-out;
+    transition: transform 400ms ease-in-out;
     cursor: pointer;
 }
 
 .refresh-icon:hover {
     transform: rotate(360deg);
+}
+
+.control-panel {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    padding: 15px;
+    background-color: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 2px 4px 0 #bdbdbd;
+    transition: background-color 400ms ease-in-out;
+}
+
+.control-panel:hover {
+    background-color: white;
 }
