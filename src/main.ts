@@ -29,6 +29,7 @@ import {
   tap,
   toArray
 } from "rxjs/operators";
+import { easingFunctions } from './configs/easing-functions';
 
 interface Point {
   x: number;
@@ -134,29 +135,6 @@ const drawGraph = (context: CanvasRenderingContext2D, graphConfig: GraphConfig):
   drawText(context, "1", { x: xAxis.min - 8, y: yAxis.max });
 };
 
-const pointOnGraph = (
-  context: CanvasRenderingContext2D,
-  point: Point,
-  x0: number,
-  y0: number,
-  xDelta: number,
-  yDelta: number
-): void => {
-  context.beginPath();
-  context.fillStyle = "red";
-  context.arc(
-    x0 + point.x * xDelta,
-    y0 + point.y * yDelta,
-    1,
-    0,
-    Math.PI * 2,
-    true
-  );
-  context.strokeStyle = "red";
-  context.stroke();
-  context.fill();
-};
-
 const edgeOnGraph = (
   graphConfig: GraphConfig,
   from: Point,
@@ -190,38 +168,21 @@ const draw = (
   }
 };
 
-const sineInOut: EasingFunction = (t, b, c, d) => {
-  return (-c / 2) * (Math.cos((Math.PI * t) / d) - 1) + b;
+const getPointInsideGraph = (event: MouseEvent, graphConfig: GraphConfig): Point | null => {
+  const x = event.offsetX;
+  const y = event.offsetY;
+
+  const xAxis = graphConfig.x;
+  const yAxis = graphConfig.y;
+
+  if (x < xAxis.min || x > xAxis.edge || y < yAxis.edge || y > yAxis.min) return null;
+
+  return {
+    x: x,
+    y: y
+  };
 };
 
-const easeInOutElastic: EasingFunction = (t, b, c, d) => {
-  var s = 1.70158;
-  var p = 0;
-  var a = c;
-  if (t == 0) return b;
-  if ((t /= d / 2) == 2) return b + c;
-  if (!p) p = d * (0.3 * 1.5);
-  if (a < Math.abs(c)) {
-    a = c;
-    var s = p / 4;
-  } else var s = (p / (2 * Math.PI)) * Math.asin(c / a);
-  if (t < 1)
-    return (
-      -0.5 *
-      (a *
-        Math.pow(2, 10 * (t -= 1)) *
-        Math.sin(((t * d - s) * (2 * Math.PI)) / p)) +
-      b
-    );
-  return (
-    a *
-    Math.pow(2, -10 * (t -= 1)) *
-    Math.sin(((t * d - s) * (2 * Math.PI)) / p) *
-    0.5 +
-    c +
-    b
-  );
-};
 
 const point$ = (from: number, to: number, duration: number, easingFunction: EasingFunction) =>
   defer(() => {
@@ -252,21 +213,6 @@ const pointNormalized$ = (
       y: point.y / to
     }))
   );
-
-const getPointInsideGraph = (event: MouseEvent, graphConfig: GraphConfig): Point | null => {
-  const x = event.offsetX;
-  const y = event.offsetY;
-
-  const xAxis = graphConfig.x;
-  const yAxis = graphConfig.y;
-
-  if (x < xAxis.min || x > xAxis.edge || y < yAxis.edge || y > yAxis.min) return null;
-
-  return {
-    x: x,
-    y: y
-  };
-};
 
 const graph$ = (
   graphConfig: GraphConfig,
@@ -320,57 +266,43 @@ const graph$ = (
     );
   });
 
-const easingFunctions: Record<string, EasingFunction> = {
-  easeInOutElastic: easeInOutElastic,
-  sineInOut: sineInOut,
+const init = () => {
+  const graphsContainer = document.getElementById('graphs') as HTMLDivElement;
+  const durationIndicator = document.getElementById('duration-indicator') as HTMLSpanElement;
+  const durationRange = document.getElementById("duration-range") as HTMLInputElement;
+
+  if (!graphsContainer || !durationIndicator || !durationRange) return;
+
+  const duration$ = fromEvent(durationRange, "change").pipe(
+    map(event => event.target as HTMLInputElement),
+    map(target => target.value),
+    startWith(durationRange.value),
+    map(value => Number(value)),
+    shareReplay(1)
+  );
+
+  Object.entries(easingFunctions).forEach(([name, easingFunction]) => {
+    const canvas = document.createElement('canvas');
+
+    const graph = document.createElement('div');
+    graph.classList.add('graph');
+
+    const graphHeader = document.createElement('div');
+    graphHeader.classList.add('graph-header');
+    graphHeader.innerText = name;
+
+    graph.appendChild(graphHeader);
+    graph.appendChild(canvas);
+
+    graphsContainer.appendChild(graph);
+
+    const graphConfig = getGraphConfig(canvas, 300, 300, 40, 40);
+
+    duration$.pipe(
+      tap(duration => durationIndicator.innerText = `${duration}ms`),
+      switchMap(duration => graph$(graphConfig, 0, 100, duration, easingFunction))
+    ).subscribe();
+  });
 };
 
-const selector = document.getElementById(
-  "easing-function"
-) as HTMLSelectElement;
-Object.keys(easingFunctions).forEach(key => {
-  const option = document.createElement("option");
-  option.value = key;
-  option.innerText = key;
-  selector.appendChild(option);
-});
-
-selector.value = Object.keys(easingFunctions)[0];
-
-const easingFunction$ = fromEvent(selector, "change").pipe(
-  map((event: Event) => event.target as HTMLSelectElement),
-  filter<HTMLSelectElement>(Boolean),
-  map((target: HTMLSelectElement) => target.value),
-  startWith(Object.keys(easingFunctions)[0]),
-  map(easingFunctionKey => easingFunctions[easingFunctionKey]),
-  filter(Boolean)
-);
-
-const durationRange = document.getElementById(
-  "duration-range"
-) as HTMLInputElement;
-
-const duration$ = fromEvent(durationRange, "change").pipe(
-  map(event => event.target as HTMLInputElement),
-  map(target => target.value),
-  startWith(durationRange.value),
-  map(value => Number(value))
-);
-
-const graphVariables$ = combineLatest([
-  of(0),
-  of(100),
-  duration$,
-  easingFunction$
-]);
-
-const canvasElement = document.getElementById("graph") as HTMLCanvasElement;
-const graphConfig = getGraphConfig(canvasElement, 400, 400, 20, 40);
-
-graphVariables$
-  .pipe(
-    switchMap(([from, to, duration, easingFunction]) =>
-      graph$(graphConfig, from, to, duration, easingFunction)
-    )
-  )
-  .subscribe();
+init();

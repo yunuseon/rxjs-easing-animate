@@ -7,17 +7,16 @@
 </head>
 
 <body>
-    <select id="easing-function"></select>
     <label>
-        <div>duration:</div>
+        <div>duration: <span id="duration-indicator"></span></div>
         <input id="duration-range"
                type="range"
                min="100"
                max="2000"
                value="330">
     </label>
-    <div>
-        <canvas id="graph"></canvas>
+    <div id="graphs"
+         class="graphs">
     </div>
 </body>
 

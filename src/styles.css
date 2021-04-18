@@ -1,9 +1,32 @@
-.canvas {
+body {
+    background-color: #fafafa;
+}
+
+canvas {
     display: block;
     margin: 0px;
     padding: 0px;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    outline: 3px solid black;
+    box-shadow: 0 2px 4px 0 #bdbdbd;
+}
+
+.graphs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.graph {
+    flex: 1 0px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.graph-header {
+    font-weight: bold;
+    margin-bottom: 5px;
 }

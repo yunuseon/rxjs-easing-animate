@@ -1,1 +1,1 @@
-export type EasingFunction = (elapsedTime: number, start: number, delta: number, duration: number) => number;
+export type EasingFunction = (elapsedTime: number, start: number, delta: number, duration: number, overshoot?: number) => number;
