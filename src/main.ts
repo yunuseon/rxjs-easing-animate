@@ -65,6 +65,13 @@ interface AxisConfig {
   offset: number;
 }
 
+interface AnimationOptions {
+  from: number;
+  to: number;
+  duration: number;
+  easingFunction: EasingFunction;
+}
+
 const getGraphConfig = (
   graphCanvas: HTMLCanvasElement,
   width: number,
@@ -243,42 +250,26 @@ const getPointInside = (event: MouseEvent, graphConfig: GraphConfig): Point | nu
 };
 
 
-const point$ = (from: number, to: number, duration: number, easingFunction: EasingFunction) =>
+const animationFrameState$ = (options: AnimationOptions) =>
   defer(() => {
-    const delta = Math.abs(to - from);
+    const delta = Math.abs(options.to - options.from);
     return animationFrames().pipe(
       map(frame => frame.elapsed),
       map(
         (elapsed): Point => ({
-          x: elapsed,
-          y: easingFunction(elapsed, from, delta, duration)
+          x: elapsed / options.duration,
+          y: options.easingFunction(elapsed, options.from, delta, options.duration) / options.to
         })
       ),
-      startWith({ x: 0, y: from }),
-      takeWhile(point => point.x < duration),
-      endWith({ x: duration, y: to })
+      startWith({ x: 0, y: options.from }),
+      takeWhile(point => point.x < 1),
+      endWith({ x: 1, y: 1 })
     );
   });
 
-const pointNormalized$ = (
-  from: number,
-  to: number,
-  duration: number,
-  easingFunction: EasingFunction
-) =>
-  point$(from, to, duration, easingFunction).pipe(
-    map(point => ({
-      x: point.x / duration,
-      y: point.y / to
-    }))
-  );
-
 const graph$ = (
   graphConfig: GraphConfig,
-  from: number,
-  to: number,
-  duration: number,
-  easingFunction: EasingFunction,
+  animationOptions: AnimationOptions,
   renderOptions: RenderOptions
 ) =>
   defer(() => {
@@ -303,12 +294,7 @@ const graph$ = (
       startWith(null)
     );
 
-    const point$ = pointNormalized$(
-      from,
-      to,
-      duration,
-      easingFunction
-    ).pipe(
+    const point$ = animationFrameState$(animationOptions).pipe(
       shareReplay(1)
     );
 
@@ -389,18 +375,26 @@ const init = () => {
 
     const graphConfig = getGraphConfig(canvas, 300, 300, 20, 40);
 
-
     const renderOptions$ = renderPoints$.pipe(
       map(renderPoints => ({
         renderPoints: renderPoints
       }))
     )
 
+    const animationOptions$ = duration$.pipe(
+      map((duration): AnimationOptions => ({
+        from: 0,
+        to: 100,
+        duration: duration,
+        easingFunction: easingFunction
+      }))
+    );
+
     fromEvent(refreshBtn, 'click').pipe(
       mapTo(undefined),
       startWith(undefined),
-      switchMapTo(combineLatest([duration$, renderOptions$])),
-      switchMap(([duration, renderOptions]) => graph$(graphConfig, 0, 100, duration, easingFunction, renderOptions))
+      switchMapTo(combineLatest([animationOptions$, renderOptions$])),
+      switchMap(([animationOptions, renderOptions]) => graph$(graphConfig, animationOptions, renderOptions))
     ).subscribe();
   });
 };
