@@ -232,7 +232,20 @@ const getCorrespondingPointOnGraph = (
 };
 
 const drawGraph = (graphConfig: GraphConfig, edges: Edge[]) => {
-  edges.forEach(({ from, to }) => edgeOnGraph(graphConfig, from, to));
+  const context = graphConfig.renderContext;
+  const xAxis = graphConfig.x;
+  const yAxis = graphConfig.y;
+
+  context.beginPath();
+  context.strokeStyle = '#5F021F';
+  context.setLineDash([]);
+
+  edges.forEach(({ from, to }) => {
+    context.moveTo(xAxis.min + from.x * xAxis.delta, yAxis.min + from.y * yAxis.delta);
+    context.lineTo(xAxis.min + to.x * xAxis.delta, yAxis.min + to.y * yAxis.delta);
+  });
+
+  context.stroke();
 };
 
 const drawHighlight = (graphConfig: GraphConfig, hightlightPosition: Point | null) => {
