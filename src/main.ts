@@ -36,6 +36,7 @@ import { easingFunctions } from './configs/easing-functions';
 
 interface RenderOptions {
   renderPoints: boolean;
+  renderCoords: boolean;
 }
 
 interface Point {
@@ -223,7 +224,7 @@ const getCorrespondingPointOnGraph = (
   pointInsideGraph: Point | null
 ) => {
   if (!pointInsideGraph) return null;
-  const distances = points.map(point => Math.sqrt(Math.pow(Math.abs(point.x - pointInsideGraph.x), 2) + Math.pow(Math.abs(point.y - pointInsideGraph.y), 2)));
+  const distances = points.map(point => Math.sqrt(Math.pow(point.x - pointInsideGraph.x, 2) + Math.pow(point.y - pointInsideGraph.y, 2)));
   const minDistance = Math.min(...distances);
   const resultIndex = distances.findIndex(distance => distance === minDistance);
   if (resultIndex === -1) return null;
@@ -263,39 +264,8 @@ const drawHighlightPosition = (graphConfig: GraphConfig, hightlightPosition: Poi
   );
 };
 
-const saveToBuffer = (graphConfig: GraphConfig) => {
-  graphConfig.offscreenRenderContext.drawImage(graphConfig.graphCanvas, 0, 0);
-};
-
-const drawBuffer = (graphConfig: GraphConfig) => {
-  graphConfig.renderContext.drawImage(graphConfig.offscreenCanvas, 0, 0);
-};
-
-const draw = (
-  graphConfig: GraphConfig,
-  normalizedEdges: Edge[],
-  pointInsideGraph: Point | null,
-  renderOptions: RenderOptions
-): void => {
-  const context = graphConfig.renderContext;
-
-
-  normalizedEdges.forEach(({ from, to }) => edgeOnGraph(graphConfig, from, to));
-
-  if (pointInsideGraph) {
-    if (pointInsideGraph.y < 0) {
-      edgeOnGraph(graphConfig, { x: 0, y: -pointInsideGraph.y }, { x: pointInsideGraph.x, y: -pointInsideGraph.y }, true, '#bdbdbd');
-      edgeOnGraph(graphConfig, { x: pointInsideGraph.x, y: -pointInsideGraph.y }, pointInsideGraph, true, '#bdbdbd');
-    } else {
-      edgeOnGraph(graphConfig, { x: 0, y: pointInsideGraph.y }, pointInsideGraph, true, '#bdbdbd');
-      edgeOnGraph(graphConfig, { x: pointInsideGraph.x, y: 0 }, pointInsideGraph, true, '#bdbdbd');
-    }
-  }
-
-  if (renderOptions.renderPoints) {
-    normalizedEdges.map(edge => edge.to).forEach(point => pointOnGraph(graphConfig, point));
-  }
-};
+const saveToBuffer = (graphConfig: GraphConfig) => graphConfig.offscreenRenderContext.drawImage(graphConfig.graphCanvas, 0, 0);
+const drawBuffer = (graphConfig: GraphConfig) => graphConfig.renderContext.drawImage(graphConfig.offscreenCanvas, 0, 0);
 
 const getPointInside = (event: MouseEvent, graphConfig: GraphConfig): Point => {
   const xAxis = graphConfig.x;
@@ -399,18 +369,22 @@ const graph$ = (
       tap(highlightPosition => {
         drawBuffer(graphConfig);
         drawHighlight(graphConfig, highlightPosition);
-        drawHighlightPosition(graphConfig, highlightPosition, animationOptions);
+
+        if (renderOptions.renderCoords) {
+          drawHighlightPosition(graphConfig, highlightPosition, animationOptions);
+        }
       })
     );
   });
 
 const init = () => {
-  const renderPoints = document.getElementById('render-points') as HTMLInputElement;
+  const renderPointsElement = document.getElementById('render-points') as HTMLInputElement;
+  const renderCoordsElement = document.getElementById('render-coords') as HTMLInputElement;
   const graphsContainer = document.getElementById('graphs') as HTMLDivElement;
   const durationIndicator = document.getElementById('duration-indicator') as HTMLSpanElement;
   const durationRange = document.getElementById("duration-range") as HTMLInputElement;
 
-  if (!graphsContainer || !durationIndicator || !durationRange || !renderPoints) return;
+  if (!graphsContainer || !durationIndicator || !durationRange || !renderPointsElement || !renderCoordsElement) return;
 
   const duration$ = fromEvent(durationRange, "change").pipe(
     map(event => event.target as HTMLInputElement),
@@ -421,10 +395,18 @@ const init = () => {
     shareReplay(1)
   );
 
-  const renderPoints$ = fromEvent(renderPoints, 'change').pipe(
+  const renderPoints$ = fromEvent(renderPointsElement, 'change').pipe(
     map(event => event.target as HTMLInputElement),
     map(target => target.checked),
-    startWith(renderPoints.checked),
+    startWith(renderPointsElement.checked),
+    distinctUntilChanged(),
+    shareReplay(1)
+  );
+
+  const renderCoords$ = fromEvent(renderCoordsElement, 'change').pipe(
+    map(event => event.target as HTMLInputElement),
+    map(target => target.checked),
+    startWith(renderCoordsElement.checked),
     distinctUntilChanged(),
     shareReplay(1)
   );
@@ -451,11 +433,15 @@ const init = () => {
 
     const graphConfig = getGraphConfig(canvas, 300, 300, 20, 40);
 
-    const renderOptions$ = renderPoints$.pipe(
-      map(renderPoints => ({
-        renderPoints: renderPoints
+    const renderOptions$ = combineLatest([
+      renderPoints$,
+      renderCoords$
+    ]).pipe(
+      map(([renderPoints, renderCoords]) => ({
+        renderPoints: renderPoints,
+        renderCoords: renderCoords
       }))
-    )
+    );
 
     const animationOptions$ = duration$.pipe(
       map((duration): AnimationOptions => ({
