@@ -42,6 +42,7 @@ interface RenderOptions {
   renderPoints: boolean;
   renderCoords: boolean;
   renderOptimal: boolean;
+  renderFramelines: boolean;
 }
 
 interface Point {
@@ -179,6 +180,24 @@ const drawAxis = (graphConfig: GraphConfig): void => {
   drawText(graphConfig, "t", { x: xAxis.edge - 5, y: yAxis.min + 8 });
   drawText(graphConfig, "v", { x: xAxis.min - 8, y: yAxis.edge + 5 });
   drawText(graphConfig, "1", { x: xAxis.min - 8, y: yAxis.max });
+};
+
+const drawFramelines = (graphConfig: GraphConfig, frameTimes: number[]) => {
+  const context = graphConfig.renderContext;
+  const xAxis = graphConfig.x;
+  const yAxis = graphConfig.y;
+
+  context.beginPath();
+  context.setLineDash([]);
+  context.strokeStyle = "#eaeaea";
+
+  frameTimes.forEach(t => {
+    const x = xAxis.min + t * xAxis.delta;
+    context.moveTo(x, yAxis.edge);
+    context.lineTo(x, yAxis.min);
+  });
+
+  context.stroke();
 };
 
 const edgeOnGraph = (
@@ -417,6 +436,10 @@ const graph$ = (
         tap(edges => {
           drawAxis(graphConfig);
 
+          if (renderOptions.renderFramelines) {
+            drawFramelines(graphConfig, edges.map(edge => edge.to.x));
+          }
+
           if (renderOptions.renderOptimal) {
             drawOptimalGraph(graphConfig, optimalEdges);
           }
@@ -435,6 +458,7 @@ const graph$ = (
   });
 
 const init = () => {
+  const renderFramelinesElement = document.getElementById('render-framelines') as HTMLInputElement;
   const renderOptimalElement = document.getElementById('render-optimal') as HTMLInputElement;
   const renderPointsElement = document.getElementById('render-points') as HTMLInputElement;
   const renderCoordsElement = document.getElementById('render-coords') as HTMLInputElement;
@@ -442,7 +466,7 @@ const init = () => {
   const durationIndicator = document.getElementById('duration-indicator') as HTMLSpanElement;
   const durationRange = document.getElementById("duration-range") as HTMLInputElement;
 
-  if (!graphsContainer || !durationIndicator || !durationRange || !renderPointsElement || !renderCoordsElement || !renderOptimalElement) return;
+  if (!graphsContainer || !durationIndicator || !durationRange || !renderPointsElement || !renderCoordsElement || !renderOptimalElement || !renderFramelinesElement) return;
 
   const duration$ = fromEvent(durationRange, "change").pipe(
     map(event => event.target as HTMLInputElement),
@@ -474,15 +498,24 @@ const init = () => {
     distinctUntilChanged()
   );
 
+  const renderFramelines$ = fromEvent(renderFramelinesElement, 'change').pipe(
+    map(event => event.target as HTMLInputElement),
+    map(target => target.checked),
+    startWith(renderFramelinesElement.checked),
+    distinctUntilChanged()
+  );
+
   const renderOptions$ = combineLatest([
     renderPoints$,
     renderCoords$,
-    renderOptimal$
+    renderOptimal$,
+    renderFramelines$
   ]).pipe(
-    map(([renderPoints, renderCoords, renderOptimal]) => ({
+    map(([renderPoints, renderCoords, renderOptimal, renderFramelines]) => ({
       renderPoints: renderPoints,
       renderCoords: renderCoords,
-      renderOptimal: renderOptimal
+      renderOptimal: renderOptimal,
+      renderFramelines: renderFramelines
     })),
     shareReplay(1)
   );
