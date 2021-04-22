@@ -110,15 +110,16 @@ const createGraph = (
   height: number
 ): Graph => {
   const offsetX = 0.05 * width;
-  const offsetY = 0.12 * height;
+  const offsetYTop = 0.05 * height
+  const offsetYBottom = 0.08 * height
 
   const edgeX = width - offsetX;
   const minX = offsetX;
   const maxX = edgeX - offsetX - 8;
 
-  const edgeY = offsetY;
-  const minY = height - offsetY;
-  const maxY = edgeY + offsetY + 8;
+  const edgeY = offsetYTop;
+  const minY = height - offsetYBottom;
+  const maxY = edgeY + offsetYTop + 8;
 
   return {
     x: {
@@ -509,7 +510,7 @@ const init = () => {
   );
 
   Object.entries(easingFunctions).forEach(([name, easingFunction]) => {
-    const screen = createScreen(500, 500);
+    const screen = createScreen(300, 300);
 
     const graph = document.createElement('div');
     graph.classList.add('graph');
