@@ -45,14 +45,14 @@ interface RenderOptions {
   renderFramelines: boolean;
 }
 
-interface Point {
+interface Coordinate {
   x: number;
   y: number;
 }
 
-interface Edge {
-  from: Point;
-  to: Point;
+interface Line {
+  from: Coordinate;
+  to: Coordinate;
 }
 
 interface GraphConfig {
@@ -62,11 +62,11 @@ interface GraphConfig {
   offscreenRenderContext: CanvasRenderingContext2D,
   height: number;
   width: number;
-  x: AxisConfig;
-  y: AxisConfig;
+  x: Axis;
+  y: Axis;
 }
 
-interface AxisConfig {
+interface Axis {
   min: number;
   max: number;
   edge: number;
@@ -81,13 +81,48 @@ interface AnimationOptions {
   easingFunction: EasingFunction;
 }
 
-const getGraphConfig = (
-  graphCanvas: HTMLCanvasElement,
+interface Buffer {
+  canvas: HTMLCanvasElement;
+  context: CanvasRenderingContext2D;
+}
+
+const createBuffer = (width: number, height: number): Buffer => {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext('2d', { alpha: false });
+
+  if (!context) {
+    throw new Error('Please check why canvas does not have a 2d render context');
+  }
+
+  return {
+    canvas: canvas,
+    context: context
+  }
+}
+
+interface Screen {
+  width: number;
+  height: number;
+  front: Buffer;
+  cache: Buffer;
+  graph: Graph;
+}
+
+interface Graph {
+  x: Axis;
+  y: Axis;
+}
+
+const createGraph = (
   width: number,
-  height: number,
-  offsetX: number,
-  offsetY: number
-): GraphConfig => {
+  height: number
+) => {
+  const offsetX = 0.05 * width;
+  const offsetY = 0.12 * height;
+
   const edgeX = width - offsetX;
   const minX = offsetX;
   const maxX = edgeX - offsetX - 8;
@@ -96,30 +131,7 @@ const getGraphConfig = (
   const minY = height - offsetY;
   const maxY = edgeY + offsetY + 8;
 
-  graphCanvas.height = height;
-  graphCanvas.width = width;
-
-  const renderContext = graphCanvas.getContext("2d", { alpha: false });
-  if (!renderContext) {
-    throw new Error('Please check why canvas does not have a 2d render context');
-  }
-
-  const offscreenCanvas = document.createElement('canvas');
-  offscreenCanvas.width = graphCanvas.width;
-  offscreenCanvas.height = graphCanvas.height;
-
-  const offscreenRenderContext = offscreenCanvas.getContext('2d');
-  if (!offscreenRenderContext) {
-    throw new Error('Please check why canvas does not have a 2d render context');
-  }
-
   return {
-    graphCanvas: graphCanvas,
-    renderContext: renderContext,
-    offscreenCanvas: offscreenCanvas,
-    offscreenRenderContext: offscreenRenderContext,
-    height: height,
-    width: width,
     x: {
       edge: edgeX,
       min: minX,
@@ -137,115 +149,96 @@ const getGraphConfig = (
   }
 };
 
-const drawEdge = (
-  graphConfig: GraphConfig,
-  from: Point,
-  to: Point
-): void => {
-  const context = graphConfig.renderContext;
+const createScreen = (width: number, height: number): Screen => ({
+  height: height,
+  width: width,
+  front: createBuffer(width, height),
+  cache: createBuffer(width, height),
+  graph: createGraph(width, height)
+});
 
-  context.beginPath();
-  context.setLineDash([]);
-  context.strokeStyle = "#000000";
-  context.moveTo(from.x, from.y);
-  context.lineTo(to.x, to.y);
-  context.stroke();
-};
+const drawCache = (screen: Screen) => screen.front.context.drawImage(screen.cache.canvas, 0, 0);
+const saveToCache = (screen: Screen) => screen.cache.context.drawImage(screen.front.canvas, 0, 0);
 
-const drawText = (
-  graphConfig: GraphConfig,
-  text: string,
-  point: Point,
-  color = '#000000'
-): void => {
-  const context = graphConfig.renderContext;
-
-  context.fillStyle = color;
-  context.font = "10px serif";
-  context.fillText(text, point.x, point.y);
-};
-
-const drawAxis = (graphConfig: GraphConfig): void => {
-  const context = graphConfig.renderContext;
-  const xAxis = graphConfig.x;
-  const yAxis = graphConfig.y;
+const drawAxis = (screen: Screen): void => {
+  const context = screen.front.context;
+  const xAxis = screen.graph.x;
+  const yAxis = screen.graph.y;
 
   context.fillStyle = "white";
-  context.fillRect(0, 0, graphConfig.width, graphConfig.height);
+  context.fillRect(0, 0, screen.width, screen.height);
 
-  drawEdge(graphConfig, { x: xAxis.min, y: yAxis.min }, { x: xAxis.edge, y: yAxis.min });
-  drawEdge(graphConfig, { x: xAxis.min, y: yAxis.edge }, { x: xAxis.min, y: yAxis.min });
-  drawText(graphConfig, "0", { x: xAxis.min, y: yAxis.min + 10 });
-  drawText(graphConfig, "1", { x: xAxis.max, y: yAxis.min + 10 });
-  drawText(graphConfig, "t", { x: xAxis.edge - 5, y: yAxis.min + 8 });
-  drawText(graphConfig, "v", { x: xAxis.min - 8, y: yAxis.edge + 5 });
-  drawText(graphConfig, "1", { x: xAxis.min - 8, y: yAxis.max });
+  const axisLines = [
+    {
+      from: normalizeCoordinate(screen.graph, xAxis.min, yAxis.min),
+      to: normalizeCoordinate(screen.graph, xAxis.edge, yAxis.min)
+    },
+    {
+      from: normalizeCoordinate(screen.graph, xAxis.min, yAxis.edge),
+      to: normalizeCoordinate(screen.graph, xAxis.min, yAxis.min)
+    }
+  ];
+
+  drawLines(screen, axisLines, '#000000');
+
+  context.fillStyle = '#000000';
+  context.font = "10px serif";
+
+  context.fillText("0", xAxis.min, yAxis.min + 10);
+  context.fillText("1", xAxis.max, yAxis.min + 10);
+  context.fillText("t", xAxis.edge - 5, yAxis.min + 8);
+  context.fillText("v", xAxis.min - 8, yAxis.edge + 5);
+  context.fillText("1", xAxis.min - 8, yAxis.max);
 };
 
-const drawFramelines = (graphConfig: GraphConfig, frameTimes: number[]) => {
-  const context = graphConfig.renderContext;
-  const xAxis = graphConfig.x;
-  const yAxis = graphConfig.y;
+const drawFramelines = (screen: Screen, xCoordinates: number[]) => {
+  const framelines = xCoordinates.map(x => ({
+    from: { x: x, y: 1 },
+    to: { x: x, y: 0 }
+  }));
+
+  drawLines(screen, framelines, '#eaeaea');
+};
+
+const drawLines = (screen: Screen, lines: Line[], color: string, dashSegments: number[] = []) => {
+  const context = screen.front.context;
 
   context.beginPath();
-  context.setLineDash([]);
-  context.strokeStyle = "#eaeaea";
+  context.strokeStyle = color;
+  context.setLineDash(dashSegments);
 
-  frameTimes.forEach(t => {
-    const x = xAxis.min + t * xAxis.delta;
-    context.moveTo(x, yAxis.edge);
-    context.lineTo(x, yAxis.min);
+  lines.forEach(({ from, to }) => {
+    const absoluteFrom = absoluteCoordinate(screen.graph, from);
+    const absoluteTo = absoluteCoordinate(screen.graph, to);
+
+    context.moveTo(absoluteFrom.x, absoluteFrom.y);
+    context.lineTo(absoluteTo.x, absoluteTo.y);
   });
 
   context.stroke();
 };
 
-const edgeOnGraph = (
-  graphConfig: GraphConfig,
-  from: Point,
-  to: Point,
-  dashed = false,
-  color = '#5F021F'
-): void => {
-  const context = graphConfig.renderContext;
-  const xAxis = graphConfig.x;
-  const yAxis = graphConfig.y;
+const drawPoints = (screen: Screen, coordinates: Coordinate[], color: string): void => {
+  const context = screen.front.context;
 
-  context.beginPath();
+  context.fillStyle = color;
   context.strokeStyle = color;
-  context.setLineDash(dashed ? [5, 5] : []);
-  context.moveTo(xAxis.min + from.x * xAxis.delta, yAxis.min + from.y * yAxis.delta);
-  context.lineTo(xAxis.min + to.x * xAxis.delta, yAxis.min + to.y * yAxis.delta);
-  context.stroke();
-};
 
-const pointOnGraph = (
-  graphConfig: GraphConfig,
-  point: Point
-): void => {
-  const context = graphConfig.renderContext;
-  const xAxis = graphConfig.x;
-  const yAxis = graphConfig.y;
-
-  context.beginPath();
-  context.fillStyle = "black";
   context.setLineDash([]);
-  context.arc(
-    xAxis.min + point.x * xAxis.delta,
-    yAxis.min + point.y * yAxis.delta,
-    1,
-    0,
-    Math.PI * 2,
-    true
-  );
-  context.strokeStyle = "black";
-  context.stroke();
-  context.fill();
+
+  coordinates
+    .map(coordinate => absoluteCoordinate(screen.graph, coordinate))
+    .forEach(({ x, y }) => {
+      context.beginPath();
+      context.arc(x, y, 1, 0, Math.PI * 2, true);
+      context.stroke();
+      context.fill();
+    });
 };
 
 const getCorrespondingPointOnGraph = (
-  points: Point[],
-  pointInsideGraph: Point | null
+  points: Coordinate[],
+  pointInsideGraph: Coordinate | null
 ) => {
   if (!pointInsideGraph) return null;
   const distances = points.map(point => Math.sqrt(Math.pow(point.x - pointInsideGraph.x, 2) + Math.pow(point.y - pointInsideGraph.y, 2)));
@@ -255,102 +248,94 @@ const getCorrespondingPointOnGraph = (
   return points[resultIndex];
 };
 
-const drawGraph = (graphConfig: GraphConfig, edges: Edge[]) => {
-  const context = graphConfig.renderContext;
-  const xAxis = graphConfig.x;
-  const yAxis = graphConfig.y;
+const drawGraph = (screen: Screen, lines: Line[]): void => drawLines(screen, lines, '#5F021F');
 
-  context.beginPath();
-  context.strokeStyle = '#5F021F';
-  context.setLineDash([]);
+const drawOptimalGraph = (screen: Screen, lines: Line[]): void => drawLines(screen, lines, 'blue');
 
-  edges.forEach(({ from, to }) => {
-    context.moveTo(xAxis.min + from.x * xAxis.delta, yAxis.min + from.y * yAxis.delta);
-    context.lineTo(xAxis.min + to.x * xAxis.delta, yAxis.min + to.y * yAxis.delta);
-  });
+const getHighlightCoordinateHintLines = (highlightCoordinate: Coordinate): Line[] => {
+  if (highlightCoordinate.y < 0) {
+    return [
+      {
+        from: { x: 0, y: -highlightCoordinate.y },
+        to: { x: highlightCoordinate.x, y: -highlightCoordinate.y }
+      },
+      {
+        from: { x: highlightCoordinate.x, y: -highlightCoordinate.y },
+        to: highlightCoordinate
+      },
+    ];
+  }
 
-  context.stroke();
+  return [
+    {
+      from: { x: 0, y: highlightCoordinate.y },
+      to: highlightCoordinate
+    },
+    {
+      from: { x: highlightCoordinate.x, y: 0 },
+      to: highlightCoordinate
+    },
+  ];
 };
 
-const drawOptimalGraph = (graphConfig: GraphConfig, edges: Edge[]) => {
-  const context = graphConfig.renderContext;
-  const xAxis = graphConfig.x;
-  const yAxis = graphConfig.y;
-
-  context.beginPath();
-  context.strokeStyle = 'blue';
-  context.setLineDash([]);
-
-  edges.forEach(({ from, to }) => {
-    context.moveTo(xAxis.min + from.x * xAxis.delta, yAxis.min + from.y * yAxis.delta);
-    context.lineTo(xAxis.min + to.x * xAxis.delta, yAxis.min + to.y * yAxis.delta);
-  });
-
-  context.stroke();
-};
-
-const drawHighlight = (graphConfig: GraphConfig, hightlightPosition: Point | null) => {
-  if (!hightlightPosition) {
+const drawHighlightHints = (screen: Screen, hightlightCoordinate: Coordinate | null) => {
+  if (!hightlightCoordinate) {
     return;
   }
 
-  if (hightlightPosition.y < 0) {
-    edgeOnGraph(graphConfig, { x: 0, y: -hightlightPosition.y }, { x: hightlightPosition.x, y: -hightlightPosition.y }, true, '#bdbdbd');
-    edgeOnGraph(graphConfig, { x: hightlightPosition.x, y: -hightlightPosition.y }, hightlightPosition, true, '#bdbdbd');
-  } else {
-    edgeOnGraph(graphConfig, { x: 0, y: hightlightPosition.y }, hightlightPosition, true, '#bdbdbd');
-    edgeOnGraph(graphConfig, { x: hightlightPosition.x, y: 0 }, hightlightPosition, true, '#bdbdbd');
-  }
+  const hintLines = getHighlightCoordinateHintLines(hightlightCoordinate);
+  drawLines(screen, hintLines, '#bdbdbd', [5, 5]);
 };
 
-const drawHighlightPosition = (graphConfig: GraphConfig, hightlightPosition: Point | null, animationOptions: AnimationOptions) => {
-  if (!hightlightPosition) {
+const drawHighlightPosition = (screen: Screen, hightlightCoordinate: Coordinate | null, animationOptions: AnimationOptions): void => {
+  if (!hightlightCoordinate) {
     return;
   }
 
-  const stat = `(${Math.floor(hightlightPosition.x * animationOptions.duration)}, ${Math.floor(hightlightPosition.y * animationOptions.to)})`;
+  const stat = `(${Math.floor(hightlightCoordinate.x * animationOptions.duration)}, ${Math.floor(hightlightCoordinate.y * animationOptions.to)})`;
 
-  drawText(
-    graphConfig,
-    stat,
-    { x: graphConfig.width - 10 - graphConfig.renderContext.measureText(stat).width, y: 20 },
-    '#bdbdbd'
-  );
+
+  const context = screen.front.context;
+
+  context.fillStyle = '#bdbdbd';
+  context.font = "10px serif";
+
+  context.fillText(stat, screen.width - 10 - screen.front.context.measureText(stat).width, 20);
 };
 
-const saveToBuffer = (graphConfig: GraphConfig) => graphConfig.offscreenRenderContext.drawImage(graphConfig.graphCanvas, 0, 0);
-const drawBuffer = (graphConfig: GraphConfig) => graphConfig.renderContext.drawImage(graphConfig.offscreenCanvas, 0, 0);
-
-const getPointInside = (event: MouseEvent, graphConfig: GraphConfig): Point => {
-  const xAxis = graphConfig.x;
-  const yAxis = graphConfig.y;
-
-  const x = (event.offsetX - xAxis.min) / xAxis.delta;
-  const y = (yAxis.min - event.offsetY) / -yAxis.delta;
+const normalizeCoordinate = (graph: Graph, absoluteX: number, absoluteY: number): Coordinate => {
+  const xAxis = graph.x;
+  const yAxis = graph.y;
 
   return {
-    x: x,
-    y: y
+    x: (absoluteX - xAxis.min) / xAxis.delta,
+    y: (absoluteY - yAxis.min) / yAxis.delta
+  };
+};
+
+const absoluteCoordinate = (graph: Graph, coordinate: Coordinate): Coordinate => {
+  const x = graph.x;
+  const y = graph.y;
+
+  return {
+    x: x.min + coordinate.x * x.delta,
+    y: y.min + coordinate.y * y.delta
   };
 };
 
 const graph$ = (
-  graphConfig: GraphConfig,
+  screen: Screen,
   animationOptions: AnimationOptions,
   renderOptions: RenderOptions
 ) =>
   defer(() => {
-    const canvas = graphConfig.graphCanvas;
-    const context = canvas.getContext("2d", { alpha: false });
-
-    if (!context) return EMPTY;
-
-    const mouseEnter$ = fromEvent(canvas, "mouseenter");
-    const mouseMove$ = fromEvent(canvas, "mousemove");
-    const mouseLeft$ = fromEvent(canvas, "mouseleave");
+    const mouseEnter$ = fromEvent(screen.front.canvas, "mouseenter");
+    const mouseMove$ = fromEvent(screen.front.canvas, "mousemove");
+    const mouseLeft$ = fromEvent(screen.front.canvas, "mouseleave");
 
     const mousePos$ = mouseMove$.pipe(
-      map(event => getPointInside(event as MouseEvent, graphConfig)),
+      map(event => event as MouseEvent),
+      map(event => normalizeCoordinate(screen.graph, event.offsetX, event.offsetY)),
       takeUntil(mouseLeft$),
       endWith(null)
     );
@@ -366,7 +351,7 @@ const graph$ = (
     const point$ = animationFrames().pipe(
       map(frame => frame.elapsed),
       map(
-        (elapsed): Point => ({
+        (elapsed): Coordinate => ({
           x: elapsed / animationOptions.duration,
           y: animationOptions.easingFunction(elapsed, animationOptions.from, delta, animationOptions.duration) / animationOptions.to
         })
@@ -378,7 +363,7 @@ const graph$ = (
     );
 
     const points$ = point$.pipe(
-      scan((acc, curr) => [...acc, curr], [] as Point[]),
+      scan((acc, curr) => [...acc, curr], [] as Coordinate[]),
       shareReplay(1)
     );
 
@@ -390,9 +375,9 @@ const graph$ = (
       distinctUntilChanged((a, b) => a?.x === b?.x && a?.y === b?.y)
     );
 
-    const optimalEdges$ = range(1, animationOptions.duration).pipe(
+    const optimalLines$ = range(1, animationOptions.duration).pipe(
       map(
-        (elapsed): Point => ({
+        (elapsed): Coordinate => ({
           x: elapsed / animationOptions.duration,
           y: animationOptions.easingFunction(elapsed, animationOptions.from, delta, animationOptions.duration) / animationOptions.to
         })
@@ -402,55 +387,56 @@ const graph$ = (
       endWith({ x: 1, y: 1 }),
       pairwise(),
       map(
-        ([from, to]): Edge => ({
+        ([from, to]): Line => ({
           from: from,
           to: to
         })
       ),
-      reduce((acc, curr) => [...acc, curr], [] as Edge[]),
+      reduce((acc, curr) => [...acc, curr], [] as Line[]),
       shareReplay(1)
     );
 
-    const normalizedEdges$ = point$.pipe(
+    const normalizedLines$ = point$.pipe(
       pairwise(),
       map(
-        ([from, to]): Edge => ({
+        ([from, to]): Line => ({
           from: from,
           to: to
         })
       ),
-      scan((acc, curr) => [...acc, curr], [] as Edge[]),
+      scan((acc, curr) => [...acc, curr], [] as Line[]),
       shareReplay(1)
     );
 
     const renderHighlights$ = highlightPosition$.pipe(
-      tap(highlightPosition => {
-        drawBuffer(graphConfig);
-        drawHighlight(graphConfig, highlightPosition);
-        drawHighlightPosition(graphConfig, highlightPosition, animationOptions);
+      tap(highlightCoordinate => {
+        drawCache(screen);
+        drawHighlightHints(screen, highlightCoordinate);
+        drawHighlightPosition(screen, highlightCoordinate, animationOptions);
       })
     );
 
-    return optimalEdges$.pipe(
-      switchMap(optimalEdges => normalizedEdges$.pipe(
-        tap(edges => {
-          drawAxis(graphConfig);
+    return optimalLines$.pipe(
+      switchMap(optimalLines => normalizedLines$.pipe(
+        tap(lines => {
+          drawAxis(screen);
 
           if (renderOptions.renderFramelines) {
-            drawFramelines(graphConfig, edges.map(edge => edge.to.x));
+            const xCoordinates = lines.map(line => line.to.x);
+            drawFramelines(screen, xCoordinates);
           }
 
           if (renderOptions.renderOptimal) {
-            drawOptimalGraph(graphConfig, optimalEdges);
+            drawOptimalGraph(screen, optimalLines);
           }
 
-          drawGraph(graphConfig, edges);
+          drawGraph(screen, lines);
 
           if (renderOptions.renderPoints) {
-            edges.map(edge => edge.to).forEach(point => pointOnGraph(graphConfig, point));
+            drawPoints(screen, lines.map(edge => edge.to), '#000000');
           }
 
-          saveToBuffer(graphConfig);
+          saveToCache(screen);
         })
       )),
       switchMapTo(renderOptions.renderCoords ? renderHighlights$ : NEVER)
@@ -521,7 +507,7 @@ const init = () => {
   );
 
   Object.entries(easingFunctions).forEach(([name, easingFunction]) => {
-    const canvas = document.createElement('canvas');
+    const screen = createScreen(300, 300);
 
     const graph = document.createElement('div');
     graph.classList.add('graph');
@@ -536,11 +522,8 @@ const init = () => {
     graphHeader.appendChild(refreshBtn)
 
     graph.appendChild(graphHeader);
-    graph.appendChild(canvas);
-
+    graph.appendChild(screen.front.canvas);
     graphsContainer.appendChild(graph);
-
-    const graphConfig = getGraphConfig(canvas, 300, 300, 20, 40);
 
     const animationOptions$ = duration$.pipe(
       map((duration): AnimationOptions => ({
@@ -555,7 +538,7 @@ const init = () => {
       mapTo(undefined),
       startWith(undefined),
       switchMapTo(combineLatest([animationOptions$, renderOptions$])),
-      switchMap(([animationOptions, renderOptions]) => graph$(graphConfig, animationOptions, renderOptions))
+      switchMap(([animationOptions, renderOptions]) => graph$(screen, animationOptions, renderOptions))
     ).subscribe();
   });
 };
