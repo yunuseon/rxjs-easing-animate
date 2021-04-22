@@ -3,26 +3,18 @@ import '../assets/refresh.svg';
 
 import { EasingFunction } from './types/easing-function';
 import {
-  animationFrameScheduler,
   defer,
   fromEvent,
-  interval,
-  timer,
   animationFrames,
   combineLatest,
-  of,
-  EMPTY,
   range,
   NEVER
 } from "rxjs";
 import {
   distinctUntilChanged,
   endWith,
-  filter,
-  finalize,
   map,
   mapTo,
-  observeOn,
   pairwise,
   reduce,
   scan,
@@ -32,9 +24,7 @@ import {
   switchMapTo,
   takeUntil,
   takeWhile,
-  tap,
-  toArray,
-  withLatestFrom
+  tap
 } from "rxjs/operators";
 import { easingFunctions } from './configs/easing-functions';
 
