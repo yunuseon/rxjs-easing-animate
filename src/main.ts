@@ -42,6 +42,7 @@ interface RenderOptions {
   renderPoints: boolean;
   renderCoords: boolean;
   renderOptimal: boolean;
+  renderEffective: boolean;
   renderFramelines: boolean;
 }
 
@@ -410,7 +411,9 @@ const graph$ = (
             drawOptimalGraph(screen, optimalLines);
           }
 
-          drawGraph(screen, lines);
+          if (renderOptions.renderEffective) {
+            drawGraph(screen, lines);
+          }
 
           if (renderOptions.renderPoints) {
             drawCoordinates(screen, lines.map(line => line.to), '#000000');
@@ -427,6 +430,7 @@ const init = () => {
   const elements = {
     renderFramelines: document.getElementById('render-framelines') as HTMLInputElement,
     renderOptimal: document.getElementById('render-optimal') as HTMLInputElement,
+    renderEffective: document.getElementById('render-effective') as HTMLInputElement,
     renderPoints: document.getElementById('render-points') as HTMLInputElement,
     renderCoords: document.getElementById('render-coords') as HTMLInputElement,
     graphsContainer: document.getElementById('graphs') as HTMLDivElement,
@@ -473,6 +477,13 @@ const init = () => {
     distinctUntilChanged()
   );
 
+  const renderEffective$ = fromEvent(elements.renderEffective, 'change').pipe(
+    map(event => event.target as HTMLInputElement),
+    map(target => target.checked),
+    startWith(elements.renderEffective.checked),
+    distinctUntilChanged()
+  );
+
   const renderFramelines$ = fromEvent(elements.renderFramelines, 'change').pipe(
     map(event => event.target as HTMLInputElement),
     map(target => target.checked),
@@ -484,19 +495,21 @@ const init = () => {
     renderPoints$,
     renderCoords$,
     renderOptimal$,
+    renderEffective$,
     renderFramelines$
   ]).pipe(
-    map(([renderPoints, renderCoords, renderOptimal, renderFramelines]) => ({
+    map(([renderPoints, renderCoords, renderOptimal, renderEffective, renderFramelines]): RenderOptions => ({
       renderPoints: renderPoints,
       renderCoords: renderCoords,
       renderOptimal: renderOptimal,
+      renderEffective: renderEffective,
       renderFramelines: renderFramelines
     })),
     shareReplay(1)
   );
 
   Object.entries(easingFunctions).forEach(([name, easingFunction]) => {
-    const screen = createScreen(300, 300);
+    const screen = createScreen(500, 500);
 
     const graph = document.createElement('div');
     graph.classList.add('graph');
