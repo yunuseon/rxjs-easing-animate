@@ -105,17 +105,16 @@ interface Graph {
   y: Axis;
 }
 
-const createGraph = (
-  width: number,
-  height: number
-): Graph => {
-  const offsetX = 0.05 * width;
+const createGraph = (width: number, height: number): Graph => {
+  const offsetXLeft = 0.05 * width;
+  const offsetXRight = 0.02 * width;
+
   const offsetYTop = 0.05 * height
   const offsetYBottom = 0.08 * height
 
-  const edgeX = width - offsetX;
-  const minX = offsetX;
-  const maxX = edgeX - offsetX - 8;
+  const edgeX = width - offsetXRight;
+  const minX = offsetXLeft;
+  const maxX = edgeX - 20;
 
   const edgeY = offsetYTop;
   const minY = height - offsetYBottom;
@@ -404,8 +403,7 @@ const graph$ = (
           drawAxis(screen);
 
           if (renderOptions.renderFramelines) {
-            const xCoordinates = lines.map(line => line.to.x);
-            drawFramelines(screen, xCoordinates);
+            drawFramelines(screen, lines.map(line => line.to.x));
           }
 
           if (renderOptions.renderOptimal) {
