@@ -55,23 +55,11 @@ interface Line {
   to: Coordinate;
 }
 
-interface GraphConfig {
-  graphCanvas: HTMLCanvasElement,
-  renderContext: CanvasRenderingContext2D,
-  offscreenCanvas: HTMLCanvasElement,
-  offscreenRenderContext: CanvasRenderingContext2D,
-  height: number;
-  width: number;
-  x: Axis;
-  y: Axis;
-}
-
 interface Axis {
   min: number;
   max: number;
   edge: number;
   delta: number;
-  offset: number;
 }
 
 interface AnimationOptions {
@@ -119,7 +107,7 @@ interface Graph {
 const createGraph = (
   width: number,
   height: number
-) => {
+): Graph => {
   const offsetX = 0.05 * width;
   const offsetY = 0.12 * height;
 
@@ -136,15 +124,13 @@ const createGraph = (
       edge: edgeX,
       min: minX,
       max: maxX,
-      delta: maxX - minX,
-      offset: offsetX
+      delta: maxX - minX
     },
     y: {
       edge: edgeY,
       min: minY,
       max: maxY,
-      delta: maxY - minY,
-      offset: offsetY
+      delta: maxY - minY
     }
   }
 };
@@ -191,7 +177,7 @@ const drawAxis = (screen: Screen): void => {
   context.fillText("1", xAxis.min - 8, yAxis.max);
 };
 
-const drawFramelines = (screen: Screen, xCoordinates: number[]) => {
+const drawFramelines = (screen: Screen, xCoordinates: number[]): void => {
   const framelines = xCoordinates.map(x => ({
     from: { x: x, y: 1 },
     to: { x: x, y: 0 }
@@ -200,7 +186,7 @@ const drawFramelines = (screen: Screen, xCoordinates: number[]) => {
   drawLines(screen, framelines, '#eaeaea');
 };
 
-const drawLines = (screen: Screen, lines: Line[], color: string, dashSegments: number[] = []) => {
+const drawLines = (screen: Screen, lines: Line[], color: string, dashSegments: number[] = []): void => {
   const context = screen.front.context;
 
   context.beginPath();
@@ -218,7 +204,7 @@ const drawLines = (screen: Screen, lines: Line[], color: string, dashSegments: n
   context.stroke();
 };
 
-const drawPoints = (screen: Screen, coordinates: Coordinate[], color: string): void => {
+const drawCoordinates = (screen: Screen, coordinates: Coordinate[], color: string): void => {
   const context = screen.front.context;
 
   context.fillStyle = color;
@@ -236,16 +222,19 @@ const drawPoints = (screen: Screen, coordinates: Coordinate[], color: string): v
     });
 };
 
-const getCorrespondingPointOnGraph = (
-  points: Coordinate[],
-  pointInsideGraph: Coordinate | null
-) => {
-  if (!pointInsideGraph) return null;
-  const distances = points.map(point => Math.sqrt(Math.pow(point.x - pointInsideGraph.x, 2) + Math.pow(point.y - pointInsideGraph.y, 2)));
+const closestCoordinate = (
+  coordinates: Coordinate[],
+  pivot: Coordinate | null
+): Coordinate | null => {
+  if (!pivot) return null;
+
+  const distances = coordinates.map(point => Math.sqrt(Math.pow(point.x - pivot.x, 2) + Math.pow(point.y - pivot.y, 2)));
   const minDistance = Math.min(...distances);
   const resultIndex = distances.findIndex(distance => distance === minDistance);
+
   if (resultIndex === -1) return null;
-  return points[resultIndex];
+
+  return coordinates[resultIndex];
 };
 
 const drawGraph = (screen: Screen, lines: Line[]): void => drawLines(screen, lines, '#5F021F');
@@ -278,7 +267,7 @@ const getHighlightCoordinateHintLines = (highlightCoordinate: Coordinate): Line[
   ];
 };
 
-const drawHighlightHints = (screen: Screen, hightlightCoordinate: Coordinate | null) => {
+const drawHighlightHints = (screen: Screen, hightlightCoordinate: Coordinate | null): void => {
   if (!hightlightCoordinate) {
     return;
   }
@@ -293,7 +282,6 @@ const drawHighlightPosition = (screen: Screen, hightlightCoordinate: Coordinate 
   }
 
   const stat = `(${Math.floor(hightlightCoordinate.x * animationOptions.duration)}, ${Math.floor(hightlightCoordinate.y * animationOptions.to)})`;
-
 
   const context = screen.front.context;
 
@@ -333,82 +321,74 @@ const graph$ = (
     const mouseMove$ = fromEvent(screen.front.canvas, "mousemove");
     const mouseLeft$ = fromEvent(screen.front.canvas, "mouseleave");
 
-    const mousePos$ = mouseMove$.pipe(
+    const mouseCoordinate$ = mouseMove$.pipe(
       map(event => event as MouseEvent),
       map(event => normalizeCoordinate(screen.graph, event.offsetX, event.offsetY)),
       takeUntil(mouseLeft$),
       endWith(null)
     );
 
-    const positionInsideGraph$ = mouseEnter$.pipe(
-      switchMapTo(mousePos$),
+    const pivotCoordinate$ = mouseEnter$.pipe(
+      switchMapTo(mouseCoordinate$),
       startWith(null),
       distinctUntilChanged((a, b) => a?.x === b?.x && a?.y === b?.y)
     );
 
-    const delta = Math.abs(animationOptions.to - animationOptions.from);
+    const valueDelta = Math.abs(animationOptions.to - animationOptions.from);
 
-    const point$ = animationFrames().pipe(
+    const coordinate$ = animationFrames().pipe(
       map(frame => frame.elapsed),
-      map(
-        (elapsed): Coordinate => ({
-          x: elapsed / animationOptions.duration,
-          y: animationOptions.easingFunction(elapsed, animationOptions.from, delta, animationOptions.duration) / animationOptions.to
-        })
-      ),
+      map((elapsed): Coordinate => ({
+        x: elapsed / animationOptions.duration,
+        y: animationOptions.easingFunction(elapsed, animationOptions.from, valueDelta, animationOptions.duration) / animationOptions.to
+      })),
       startWith({ x: 0, y: animationOptions.from }),
-      takeWhile(point => point.x < 1),
+      takeWhile(coordinate => coordinate.x < 1),
       endWith({ x: 1, y: 1 }),
       shareReplay(1)
     );
 
-    const points$ = point$.pipe(
+    const coordinates$ = coordinate$.pipe(
       scan((acc, curr) => [...acc, curr], [] as Coordinate[]),
       shareReplay(1)
     );
 
-    const highlightPosition$ = combineLatest([
-      points$,
-      positionInsideGraph$
+    const highlightCoordinate$ = combineLatest([
+      coordinates$,
+      pivotCoordinate$
     ]).pipe(
-      map(([points, positionInsideGraph]) => getCorrespondingPointOnGraph(points, positionInsideGraph)),
+      map(([coordinates, positionInsideGraph]) => closestCoordinate(coordinates, positionInsideGraph)),
       distinctUntilChanged((a, b) => a?.x === b?.x && a?.y === b?.y)
     );
 
     const optimalLines$ = range(1, animationOptions.duration).pipe(
-      map(
-        (elapsed): Coordinate => ({
-          x: elapsed / animationOptions.duration,
-          y: animationOptions.easingFunction(elapsed, animationOptions.from, delta, animationOptions.duration) / animationOptions.to
-        })
-      ),
+      map((elapsed): Coordinate => ({
+        x: elapsed / animationOptions.duration,
+        y: animationOptions.easingFunction(elapsed, animationOptions.from, valueDelta, animationOptions.duration) / animationOptions.to
+      })),
       startWith({ x: 0, y: animationOptions.from }),
       takeWhile(point => point.x < 1),
       endWith({ x: 1, y: 1 }),
       pairwise(),
-      map(
-        ([from, to]): Line => ({
-          from: from,
-          to: to
-        })
-      ),
+      map(([from, to]): Line => ({
+        from: from,
+        to: to
+      })),
       reduce((acc, curr) => [...acc, curr], [] as Line[]),
       shareReplay(1)
     );
 
-    const normalizedLines$ = point$.pipe(
+    const normalizedLines$ = coordinate$.pipe(
       pairwise(),
-      map(
-        ([from, to]): Line => ({
-          from: from,
-          to: to
-        })
-      ),
+      map(([from, to]): Line => ({
+        from: from,
+        to: to
+      })),
       scan((acc, curr) => [...acc, curr], [] as Line[]),
       shareReplay(1)
     );
 
-    const renderHighlights$ = highlightPosition$.pipe(
+    const renderHighlights$ = highlightCoordinate$.pipe(
       tap(highlightCoordinate => {
         drawCache(screen);
         drawHighlightHints(screen, highlightCoordinate);
@@ -433,7 +413,7 @@ const graph$ = (
           drawGraph(screen, lines);
 
           if (renderOptions.renderPoints) {
-            drawPoints(screen, lines.map(edge => edge.to), '#000000');
+            drawCoordinates(screen, lines.map(line => line.to), '#000000');
           }
 
           saveToCache(screen);
@@ -444,50 +424,59 @@ const graph$ = (
   });
 
 const init = () => {
-  const renderFramelinesElement = document.getElementById('render-framelines') as HTMLInputElement;
-  const renderOptimalElement = document.getElementById('render-optimal') as HTMLInputElement;
-  const renderPointsElement = document.getElementById('render-points') as HTMLInputElement;
-  const renderCoordsElement = document.getElementById('render-coords') as HTMLInputElement;
-  const graphsContainer = document.getElementById('graphs') as HTMLDivElement;
-  const durationIndicator = document.getElementById('duration-indicator') as HTMLSpanElement;
-  const durationRange = document.getElementById("duration-range") as HTMLInputElement;
+  const elements = {
+    renderFramelines: document.getElementById('render-framelines') as HTMLInputElement,
+    renderOptimal: document.getElementById('render-optimal') as HTMLInputElement,
+    renderPoints: document.getElementById('render-points') as HTMLInputElement,
+    renderCoords: document.getElementById('render-coords') as HTMLInputElement,
+    graphsContainer: document.getElementById('graphs') as HTMLDivElement,
+    durationIndicator: document.getElementById('duration-indicator') as HTMLSpanElement,
+    durationRange: document.getElementById("duration-range") as HTMLInputElement,
+  } as const;
 
-  if (!graphsContainer || !durationIndicator || !durationRange || !renderPointsElement || !renderCoordsElement || !renderOptimalElement || !renderFramelinesElement) return;
+  if (Object.values(elements).some(element => !element)) {
+    const failedElemntIds = Object.entries(elements)
+      .filter(([key, element]) => !element)
+      .map(([key, element]) => key)
+      .join('\n')
 
-  const duration$ = fromEvent(durationRange, "change").pipe(
+    throw new Error(`Could not find elements with ids:\n${failedElemntIds}`)
+  }
+
+  const duration$ = fromEvent(elements.durationRange, "change").pipe(
     map(event => event.target as HTMLInputElement),
     map(target => target.value),
-    startWith(durationRange.value),
+    startWith(elements.durationRange.value),
     map(value => Number(value)),
-    tap(duration => durationIndicator.innerText = `${duration}ms`),
+    tap(duration => elements.durationIndicator.innerText = `${duration}ms`),
     shareReplay(1)
   );
 
-  const renderPoints$ = fromEvent(renderPointsElement, 'change').pipe(
+  const renderPoints$ = fromEvent(elements.renderPoints, 'change').pipe(
     map(event => event.target as HTMLInputElement),
     map(target => target.checked),
-    startWith(renderPointsElement.checked),
+    startWith(elements.renderPoints.checked),
     distinctUntilChanged()
   );
 
-  const renderCoords$ = fromEvent(renderCoordsElement, 'change').pipe(
+  const renderCoords$ = fromEvent(elements.renderCoords, 'change').pipe(
     map(event => event.target as HTMLInputElement),
     map(target => target.checked),
-    startWith(renderCoordsElement.checked),
+    startWith(elements.renderCoords.checked),
     distinctUntilChanged()
   );
 
-  const renderOptimal$ = fromEvent(renderOptimalElement, 'change').pipe(
+  const renderOptimal$ = fromEvent(elements.renderOptimal, 'change').pipe(
     map(event => event.target as HTMLInputElement),
     map(target => target.checked),
-    startWith(renderOptimalElement.checked),
+    startWith(elements.renderOptimal.checked),
     distinctUntilChanged()
   );
 
-  const renderFramelines$ = fromEvent(renderFramelinesElement, 'change').pipe(
+  const renderFramelines$ = fromEvent(elements.renderFramelines, 'change').pipe(
     map(event => event.target as HTMLInputElement),
     map(target => target.checked),
-    startWith(renderFramelinesElement.checked),
+    startWith(elements.renderFramelines.checked),
     distinctUntilChanged()
   );
 
@@ -523,7 +512,7 @@ const init = () => {
 
     graph.appendChild(graphHeader);
     graph.appendChild(screen.front.canvas);
-    graphsContainer.appendChild(graph);
+    elements.graphsContainer.appendChild(graph);
 
     const animationOptions$ = duration$.pipe(
       map((duration): AnimationOptions => ({
