@@ -497,7 +497,7 @@ const init = () => {
     shareReplay(1)
   );
 
-  Object.entries(easingFunctions).forEach(([name, easingFunction]) => {
+  const graphStreams = Object.entries(easingFunctions).map(([name, easingFunction]) => {
     const screen = createScreen(300, 300);
 
     const graph = document.createElement('div');
@@ -525,13 +525,15 @@ const init = () => {
       }))
     );
 
-    fromEvent(refreshBtn, 'click').pipe(
+    return fromEvent(refreshBtn, 'click').pipe(
       mapTo(undefined),
       startWith(undefined),
       switchMapTo(combineLatest([animationOptions$, renderOptions$])),
       switchMap(([animationOptions, renderOptions]) => graph$(screen, animationOptions, renderOptions))
-    ).subscribe();
+    );
   });
+
+  combineLatest(graphStreams).subscribe();
 };
 
 init();
